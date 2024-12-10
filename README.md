@@ -1,0 +1,1 @@
+# ubuntu24-server-autoinstall
