@@ -1,0 +1,165 @@
+#cloud-config
+# See the autoinstall documentation at:
+# https://canonical-subiquity.readthedocs-hosted.com/en/latest/reference/autoinstall-reference.html
+autoinstall:
+  apt:
+    disable_components: []
+    fallback: offline-install
+    geoip: true
+    mirror-selection:
+      primary:
+      - country-mirror
+      - arches: &id001
+        - amd64
+        - i386
+        uri: http://archive.ubuntu.com/ubuntu/
+    preserve_sources_list: false
+    security:
+    - arches: *id001
+      uri: http://security.ubuntu.com/ubuntu/
+  codecs:
+    install: false
+  drivers:
+    install: true
+  identity:
+    hostname: hostname.domain.com
+    password: $6$E7lfIh5r3LeekvPo$xKcr.qoy0oTGtxetQmFF3mUf7ovL4iLraE/1V9t2jfEz0p5TuZGFP.aq46CdvnR8DvQfAUnKV/ruMXMy3CEtt.
+    realname: name
+    username: name
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ''
+  timezone: America/New_York
+  locale: en_US.UTF-8
+  network:
+    renderer: networkd
+    ethernets:
+      eno1:
+        critical: true
+        addresses:
+          - 192.168.1.25/24
+        gateway4: 192.168.1.1
+        nameservers:
+          addresses: [192.168.1.1]
+          search: [domain.com]
+    version: 2
+  oem:
+    install: false
+  source:
+    id: ubuntu-server-minimal
+    search_drivers: false
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+  packages:
+    - git
+    - python3-pip
+    - vim
+    - ufw
+    - apt-transport-https 
+    - ca-certificates 
+    - curl
+    - inetutils-ping
+    - net-tools
+    - atop
+  updates: security
+  version: 1
+  storage:
+    config:
+      - id: disk-sda
+        type: disk
+        ptable: gpt
+        path: /dev/sda
+        wipe: superblock-recursive
+      - id: efipart
+        type: partition
+        device: disk-sda
+        size: 2G
+        flag: boot
+        grub_device: true
+      - id: bootpart
+        type: partition
+        device: disk-sda
+        size: 2G
+      - id: pvpart
+        type: partition
+        device: disk-sda
+        size: -1
+      - id: pvpart-crypt
+        type: dm_crypt
+        volume: pvpart
+        key: password
+      - id: vg0
+        type: lvm_volgroup
+        name: vg0
+        devices:
+          - pvpart-crypt
+      - id: root_lv
+        type: lvm_partition
+        name: root_lv
+        volgroup: vg0
+        size: 150G
+      - id: home_lv
+        type: lvm_partition
+        name: home_lv
+        volgroup: vg0
+        size: 150G
+      - id: efipart_fs
+        type: format
+        volume: efipart
+        fstype: fat32
+      - id: bootpart_fs
+        type: format
+        volume: bootpart
+        fstype: ext4
+      - id: root_lv_fs
+        type: format
+        volume: root_lv
+        fstype: ext4
+      - id: home_lv_fs
+        type: format
+        volume: home_lv
+        fstype: ext4
+      - id: efipart-mount
+        type: mount
+        device: efipart_fs
+        path: /boot/efi
+      - id: bootpart-mount
+        type: mount
+        device: bootpart_fs
+        path: /boot
+      - id: root_lv_mount
+        type: mount
+        device: root_lv_fs
+        path: /
+      - id: home_lv_mount
+        type: mount
+        device: home_lv_fs
+        path: /home
+  late-commands:
+    - curtin in-target --target=/target -- sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash ipv6.disable=1 ipv6.disable_ipv6=1"/' /etc/default/grub
+    - curtin in-target --target=/target -- update-grub
+    - curtin in-target --target=/target -- sysctl --write net.ipv6.conf.all.disable_ipv6=1
+    - curtin in-target --target=/target -- sed -i 's/NTP=.*/NTP=time.nist.gov/' /etc/systemd/timesyncd.conf
+    - curtin in-target --target=/target -- ufw enable
+    - curtin in-target --target=/target -- ufw default deny outgoing
+    - curtin in-target --target=/target -- ufw default deny incoming
+    - curtin in-target --target=/target -- ufw logging on
+    - curtin in-target --target=/target -- ufw allow out 22/tcp comment 'Allow SSH Out'
+    - curtin in-target --target=/target -- ufw allow out 53/tcp comment 'Allow DNS Out'
+    - curtin in-target --target=/target -- ufw allow out 53/udp comment 'Allow DNS Out'
+    - curtin in-target --target=/target -- ufw allow out 80/tcp comment 'Allow HTTP Out'
+    - curtin in-target --target=/target -- ufw allow out 123/udp comment 'Allow Time Out'
+    - curtin in-target --target=/target -- ufw allow out 443/tcp comment 'Allow HTTPS Out'
+    - curtin in-target --target=/target -- systemctl stop iscsid.socket
+    - curtin in-target --target=/target -- systemctl disable iscsid.socket
+    - curtin in-target --target=/target -- systemctl mask iscsid.socket
+    - curtin in-target --target=/target -- systemctl stop open-iscsi
+    - curtin in-target --target=/target -- systemctl disable open-iscsi
+    - curtin in-target --target=/target -- systemctl mask open-iscsi
+    - curtin in-target --target=/target -- systemctl stop motd-news.timer
+    - curtin in-target --target=/target -- systemctl disable motd-news.timer
+    - curtin in-target --target=/target -- systemctl mask motd-news.timer
+    - curtin in-target --target=/target -- systemctl mask motd-news
