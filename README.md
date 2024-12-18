@@ -52,7 +52,7 @@ Using the local apt-mirror solution is optional. if you decide not to use it, sk
 ```
 mirror-selection:
       primary:
-      - uri: http://172.16.3.3/tftp/ubuntu/
+      - uri: http://192.168.1.2/tftp/ubuntu/
 ```
 
 # Setup and Configuration steps
@@ -74,7 +74,7 @@ ip a
        valid_lft forever preferred_lft forever
 2: en01: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
     link/ether 23:87:fb:3d:11:b5 brd ff:ff:ff:ff:ff:ff
-    inet 192.168.1.5/24 brd 192.168.1.255 scope global noprefixroute en01
+    inet 192.168.1.2/24 brd 192.168.1.255 scope global noprefixroute en01
        valid_lft forever preferred_lft forever
 
 ```
@@ -196,6 +196,8 @@ relevant mappings to look at and update:
 - network  (in this example i set a static address, and static dns and search domain)
 - late commands (post install/config changes like enabling firewall, turning off ipv6, disabling services)
 
+In the case of late commands, i show how to resize disk to utilize any free space, disable ipv6, and stop some services and disable them that aren't needed. I would not necessarily build alot into the autoinstall, as you want it to run or fail fast. As previously mentioned using ansible pr similar tool to perform post setup configuration is suggested.
+
 ### authorized keys file
 I would recommmend creating an ssh pub/priv keypair for connecting to the new host once it's provisioned. You then copy the contents of the .pub file to the autoinstall file which later becomes "user-data"
 ```
@@ -290,18 +292,12 @@ At this point you are ready to test your PXE boot environment this assumes that:
 # Working with Secure Boot and some pitfalls to be wary of
 I was unable to get a working pxe boot solution on UEFI stack with secure boot set to enforced prior to install. I was however able to set the bios for secure boot to "audit", perform the unattended installation, then return to bios and enable secure boot to enforce. 
 
-getting nvidia drivers to work was a challenge, perhaps will include in future update.
-
 Secure boot was validated by running the following CLI command (after secure boot was enabled in BIOS):
 sudo mokutil --sb-state
 
 The reasons for the issues with secure boot are complicated. Most likely is that my hardware is so old that i could not get Ubuntu's signature to be verified, since no updated firmware for my motherboard exist.  I did experiment with creating personal signing keys and importing them, but that caused other issues, but appeared to work and far too messy to consider.
 
 Other mistakes along the way included specifying the kernel in the user-data section along with the oem metadata flag. Since i didn't RTFM (I included the link below), and it wasn't immediately apparent that the oem metadata package contains drivers and content that are kernel specific and that the flags can cause kernel install failures due to package dependency issues, i had subiquity crashing during kernel install.
-
-Getting the pxe boot sequence down required alot of tcpdump, wireshark, and log traversing. One of the biggest challenges was getting debug output from screens that would refresh too fast, and or non specific error messaging.  I chose to follow examples from Ubuntu's documentation. I know now there are alot of other pxe tooling available that may be better than the minimal config i used, and may be explored in the future.
-
-I wasted alot, ALOT of time trying to create a firewalled (at the dhcp/bootp/tftp host) setup and confg.  Stateless connections, and a whole lot of multicast and udp and ephemeral ports lead me to my conclusions.  Temporarily disable firewall on the distribution point, run the test install, enable firewall is as far as i got for a process.
 
 # Important links for documentation and debugging
 the autoinstall.yaml params and what they mean, default values etc.

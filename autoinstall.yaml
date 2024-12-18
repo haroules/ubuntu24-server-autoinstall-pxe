@@ -5,22 +5,19 @@ autoinstall:
   apt:
     disable_components: []
     fallback: offline-install
-    geoip: true
+    geoip: false
     mirror-selection:
       primary:
-      - country-mirror
-      - arches: &id001
-        - amd64
-        - i386
-        uri: http://archive.ubuntu.com/ubuntu/
+      - uri: http://192.168.1.2/tftp/ubuntu/
+        arches: [amd64]
     preserve_sources_list: false
     security:
-    - arches: *id001
-      uri: http://security.ubuntu.com/ubuntu/
+    - uri: http://security.ubuntu.com/ubuntu/
+      arches: [amd64]
   codecs:
     install: false
   drivers:
-    install: true
+    install: false
   identity:
     hostname: hostname.domain.com
     password: $6$E7lfIh5r3LeekvPo$xKcr.qoy0oTGtxetQmFF3mUf7ovL4iLraE/1V9t2jfEz0p5TuZGFP.aq46CdvnR8DvQfAUnKV/ruMXMy3CEtt.
@@ -46,24 +43,15 @@ autoinstall:
     version: 2
   oem:
     install: false
+  shutdown: poweroff
   source:
     id: ubuntu-server-minimal
     search_drivers: false
   ssh:
-    allow-pw: true
-    authorized-keys: []
+    allow-pw: false
+    authorized-keys:
+      - ssh-ed25519 {key} name@hostname.domain.com
     install-server: true
-  packages:
-    - git
-    - python3-pip
-    - vim
-    - ufw
-    - apt-transport-https 
-    - ca-certificates 
-    - curl
-    - inetutils-ping
-    - net-tools
-    - atop
   updates: security
   version: 1
   storage:
@@ -139,20 +127,12 @@ autoinstall:
         device: home_lv_fs
         path: /home
   late-commands:
+    - curtin in-target --target=/target -- sudo lvextend -l +100%FREE /dev/vg0/home_lv
+    - curtin in-target --target=/target -- sudo resize2fs /dev/mapper/vg0-home_lv
     - curtin in-target --target=/target -- sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash ipv6.disable=1 ipv6.disable_ipv6=1"/' /etc/default/grub
     - curtin in-target --target=/target -- update-grub
     - curtin in-target --target=/target -- sysctl --write net.ipv6.conf.all.disable_ipv6=1
     - curtin in-target --target=/target -- sed -i 's/NTP=.*/NTP=time.nist.gov/' /etc/systemd/timesyncd.conf
-    - curtin in-target --target=/target -- ufw enable
-    - curtin in-target --target=/target -- ufw default deny outgoing
-    - curtin in-target --target=/target -- ufw default deny incoming
-    - curtin in-target --target=/target -- ufw logging on
-    - curtin in-target --target=/target -- ufw allow out 22/tcp comment 'Allow SSH Out'
-    - curtin in-target --target=/target -- ufw allow out 53/tcp comment 'Allow DNS Out'
-    - curtin in-target --target=/target -- ufw allow out 53/udp comment 'Allow DNS Out'
-    - curtin in-target --target=/target -- ufw allow out 80/tcp comment 'Allow HTTP Out'
-    - curtin in-target --target=/target -- ufw allow out 123/udp comment 'Allow Time Out'
-    - curtin in-target --target=/target -- ufw allow out 443/tcp comment 'Allow HTTPS Out'
     - curtin in-target --target=/target -- systemctl stop iscsid.socket
     - curtin in-target --target=/target -- systemctl disable iscsid.socket
     - curtin in-target --target=/target -- systemctl mask iscsid.socket
