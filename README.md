@@ -35,13 +35,25 @@
 
 - Through trial and error, I have come to the conclusion that it's easiest to do this on an isolated network segment since multicast, and random ephemeral UDP ports are used making firewall configuration with UFW very complicated. I found that temporarily disabling firewall while testing and making things functional eliminates a lot of networking challenges. tcpdump will be your friend should you walk the lonely road to a functional firewalled host configuration. 
 
-- If you have a dhcp server on the same network segment as your tftp/bootp server, make sure to disable bootp queries and tftp on the device, in my case a firewall/gateway/network appliance. If possible, do not have another dhcp server on that segment, or plan to smash your head on DHCP option sets and other challenges.
+- If you have a dhcp server on the same network segment as your tftp/bootp server, make sure to disable bootp queries and tftp on the dedicated dhcp server, in my case a firewall/gateway/network appliance. If possible, do not have another dhcp server on that segment, or plan to smash your head on DHCP option sets and other challenges.
 
 - I have included the config files i used, you will want to edit them for your particular network, you will also want to change the default user password, and lvm crypt password (more on this in the autoinstall configuration section)
 
 - Please read the section regarding Secure Boot.  This can be really painful with 3rd party drivers like nvidia for graphics, and also the PXE Boot loader complaining about signatures. Since this is a server install, there's alot less drivers to deal with than desktop. My configuration will work with secure boot, but it's a process that involves entering bios before and after the install.
 
 - File naming conventions, directory structure and configuration options in the user-data section are very specific in regards to name and layout.  I'll try to do my best to point those out where possible, and provide a directory structure.  I'll also provide links to the documentation that got me working.
+
+- NTP and DNS server are crucial.  I found lots of random subiquity crashes when system time was not accurate.  I also found that i needed to use static DNS mapping to a DNS server rather than DHCP provided DNS configuration, since my server was not actually resolving names but merely providing DHCP address, and tftp/bootp data.
+
+- I found ubuntu mirrors to randomly not work or be reliable for some reason (maybe a side effect of time skew) from a design perspective i would rather have less configuration, and bare essentials in the autoinstall, and rely more on ansible, chef, or puppet for the configuration specifics and additional packages. apt-cacher-ng is good for caching packages on a private network.  I also ended up using apt-mirror to mirror the ubuntu repository for noble. This allowed me to keep the entire install process confined to local network. It comes at a price-  it took several hours to mirror the packages, and chews up about 250 GB of storage, however that pays off in reliability and preventing internet or mirror issues.
+
+Using the local apt-mirror solution is optional. if you decide not to use it, skip that setup section and modify your autoinstall.yaml to point to http://archive.ubuntu.com/ubuntu/ instead of your local one. 
+
+```
+mirror-selection:
+      primary:
+      - uri: http://172.16.3.3/tftp/ubuntu/
+```
 
 # Setup and Configuration steps
 
@@ -131,8 +143,46 @@ Alias /tftp /srv/tftp
 - a2econf tftp.conf
 - sudo systemctl restart apache2
 
-## 7. Autoinstall configuration file (used by subiquity for unattended install)
-The autoinstall.yaml ( example in the source pack ) gets copied into the distribution point as user-data, and is what drives subiquity to perform unattended (pre-selected configuration) install options. I edit and rename on the copy since the file as needed by the autoinstall process must be called user-data, where as the sample from Ubuntu is named as I have included it. 
+## 7. Setting up apt-mirror
+First install apt-mirror
+ - sudo apt install -y apt-mirror
+Make backup of default config file for reference 
+ - sudo cp /etc/apt/mirror.list /etc/apt/mirror.list-bak
+Edit the list of repos to mirror to the smallest possible to get by install. I also reduced thread count as it was overloading the network on the box during initial sync...
+ - sudo vi /etc/apt/mirror.list
+
+```
+############# config ##################
+#
+# set base_path    /var/spool/apt-mirror
+#
+# set mirror_path  $base_path/mirror
+# set skel_path    $base_path/skel
+# set var_path     $base_path/var
+# set cleanscript $var_path/clean.sh
+# set defaultarch  <running host architecture>
+# set postmirror_script $var_path/postmirror.sh
+# set run_postmirror 0
+set nthreads     10
+set _tilde 0
+#
+############# end config ##############
+
+deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+```
+
+Then launch the process to mirror, and wait for hours...
+- nohup sudo apt-mirror &
+
+(you can tail nohup.out to see progress)
+
+symlink the cached copy of the mirror into the distribution folder on your local server
+- sudo ln -s /var/spool/apt-mirror/mirror/archive.ubuntu.com/ubuntu /srv/tftp/ubuntu
+
+## 8. Autoinstall configuration file (used by subiquity for unattended install)
+The autoinstall.yaml ( example in the source pack ) gets copied into the distribution point as user-data, and is what drives subiquity to perform unattended (pre-selected configuration) install options. I edit and rename on the copy since the file as needed by the autoinstall process must be called user-data, where as the sample from Ubuntu is named as I have included it. Note that you can add additional packages, but then this would require you to have internet connection for the whole process, and can cause issues if mirrors or upstream packages aren't available. As i said previously, i handle more advanced configuration like packages, hosts, and other data with ansible.
 
 ### Editing, validating the user-data file and putting it in place
 I edit the autoinstall.yaml file, validate, source control, and then copy to the distribtion folder. For the purposes of keeping this simpler to follow, i will just share how to do minimal validation, and the tools needed to update hashed password for the initial user.
@@ -141,10 +191,31 @@ relevant mappings to look at and update:
 - identity   (hostname, username, password)
 - timezone   
 - locale
+- ssh
 - storage (the lvm crypt key is required during boot to unlock the disk)  
 - network  (in this example i set a static address, and static dns and search domain)
-- packages  (additional packages beyond "minimal install")
 - late commands (post install/config changes like enabling firewall, turning off ipv6, disabling services)
+
+### authorized keys file
+I would recommmend creating an ssh pub/priv keypair for connecting to the new host once it's provisioned. You then copy the contents of the .pub file to the autoinstall file which later becomes "user-data"
+```
+ssh-keygen -t ed25519
+Generating public/private ed25519 key pair.
+Enter file in which to save the key (/home/name/.ssh/id_ed25519): autoinstallhostkey
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+Your identification has been saved in autoinstallhostkey
+Your public key has been saved in autoinstallhostkey.pub
+
+cat autoinstallhostkey.pub
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPrxgb3t8+puyQVnTnl5OOJJY9bmFb0sWLANQzBasa+F name@host.example.com
+
+then edit autoinstall.yaml as such:
+ssh:
+    allow-pw: false
+    authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPrxgb3t8+puyQVnTnl5OOJJY9bmFb0sWLANQzBasa+F name@host.example.com
+```
 
 ### how to hash password for the yaml file
 * for the password field you have to provide a hashed value, not a plaintext one, this may be confusing since the lvm crypt key for setting disk encryption does accept plain text.
@@ -158,7 +229,7 @@ The validation i believe really only verifies schema and yaml syntax, but at lea
 ### Copy to distribution
 - sudo cp -v autoinstall.yaml /srv/tftp/user-data
 
-## 8. Verification before first run
+## 9. Verification before first run
 
 ### Verify services are listening
 
@@ -195,6 +266,7 @@ user@host1:/srv/tftp$ tree
 ├── grubx64.efi
 ├── initrd
 ├── noble-live-server-amd64.iso
+├── ubuntu -> /var/spool/apt-mirror/mirror/archive.ubuntu.com/ubuntu
 ├── unicode.pf2
 ├── user-data
 └── vmlinuz
