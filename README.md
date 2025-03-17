@@ -102,6 +102,11 @@ for the purpose of this example I chose to use /srv/tftp to be the distribution 
 - sudo apt install cd-boot-images-amd64
 - sudo ln -s /usr/share/cd-boot-images-amd64 /srv/tftp/boot-amd64
 - wget https://cdimage.ubuntu.com/ubuntu-server/noble/daily-live/current/noble-live-server-amd64.iso
+- wget https://cdimage.ubuntu.com/ubuntu-server/noble/daily-live/current/SHA256SUMS
+- wget https://cdimage.ubuntu.com/ubuntu-server/noble/daily-live/current/SHA256SUMS.gpg
+- gpg --list-keys
+- gpg --keyid-format long --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0x46181433FBB75451 0xD94AA3F0EFE21092
+- gpg --keyid-format long --verify SHA256SUMS.gpg SHA256SUMS
 - sudo mount noble-live-server-amd64.iso /mnt
 - sudo cp -v /mnt/casper/{vmlinuz,initrd} /srv/tftp/
 - sudo umount /mnt
